@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AML Guardian - Transaction Visualizer</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vis.js Network library for graph visualization -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles for the application */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light gray background */
+        }
+        #transaction-graph {
+            width: 100%;
+            height: 600px;
+            border-radius: 0.75rem;
+            background-color: #ffffff;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .vis-network:focus {
+             outline: none;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            padding: 1.5rem;
+        }
+        .btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="antialiased text-gray-800">
+
+    <div class="min-h-screen container mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900">AML Guardian 🛡️</h1>
+            <p class="text-lg text-gray-600 mt-2">AI-Powered Money Laundering Detection & Visualization</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Column: Controls and Simulator -->
+            <div class="lg:col-span-1 flex flex-col gap-8">
+                <!-- Data Source Card -->
+                <div class="card">
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">Data Source</h2>
+                    <p class="text-gray-600 mb-4">Using simulated transaction data to demonstrate a potential layering pattern.</p>
+                    <div class="flex items-center justify-between bg-gray-100 p-3 rounded-lg">
+                         <span class="font-mono text-sm text-gray-700">simulated-data.csv</span>
+                         <span class="text-green-600 font-semibold text-sm">Loaded</span>
+                    </div>
+                </div>
+
+                <!-- What-If Simulator Card -->
+                <div class="card">
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">"What-If" Simulator</h2>
+                    <p class="text-gray-600 mb-4">Add a new transaction to see how it affects the network and its predicted risk.</p>
+                    <form id="simulator-form" class="space-y-4">
+                        <div>
+                            <label for="from-account" class="block text-sm font-medium text-gray-700">From Account</label>
+                            <input type="text" id="from-account" name="from-account" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="e.g., C12345">
+                        </div>
+                        <div>
+                            <label for="to-account" class="block text-sm font-medium text-gray-700">To Account</label>
+                            <input type="text" id="to-account" name="to-account" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="e.g., D67890">
+                        </div>
+                        <div>
+                            <label for="amount" class="block text-sm font-medium text-gray-700">Amount ($)</label>
+                            <input type="number" id="amount" name="amount" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="e.g., 5000">
+                        </div>
+                        <button type="submit" class="w-full btn bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            Simulate Transaction
+                        </button>
+                    </form>
+                    <div id="risk-prediction" class="mt-4 text-center hidden">
+                        <div class="loader mx-auto"></div>
+                        <p class="text-gray-600 mt-2">Analyzing risk...</p>
+                    </div>
+                     <div id="risk-result" class="mt-4 text-center hidden p-3 rounded-lg">
+                        <p class="font-semibold text-lg"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Graph Visualization -->
+            <div class="lg:col-span-2 card">
+                <h2 class="text-2xl font-semibold mb-4">Transaction Flow Visualization</h2>
+                <div id="transaction-graph"></div>
+                 <div class="flex justify-center items-center space-x-6 mt-4 text-sm text-gray-600">
+                    <div class="flex items-center"><span class="h-3 w-3 rounded-full bg-sky-500 mr-2"></span> Normal Account</div>
+                    <div class="flex items-center"><span class="h-3 w-3 rounded-full bg-red-500 mr-2"></span> Suspicious Account</div>
+                    <div class="flex items-center"><span class="h-3 w-3 rounded-full bg-amber-500 mr-2"></span> Simulated Account</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="text/javascript">
+        // --- DATA SETUP ---
+        // This is mock data. In a real application, this would come from a CSV upload or API.
+        const accounts = [
+            // Normal entry points
+            { id: 'A1', label: 'Account A1', suspicious: false },
+            { id: 'A2', label: 'Account A2', suspicious: false },
+            { id: 'A3', label: 'Account A3', suspicious: false },
+            // Layering accounts - flagged as suspicious by the AI/Rules engine
+            { id: 'B1', label: 'Account B1', suspicious: true },
+            { id: 'B2', label: 'Account B2', suspicious: true },
+            // Integration account - also suspicious
+            { id: 'C1', label: 'Account C1', suspicious: true },
+            // Normal exit point
+            { id: 'D1', label: 'Account D1', suspicious: false },
+        ];
+
+        const transactions = [
+            // Smurfing: Multiple small amounts into one account
+            { from: 'A1', to: 'B1', amount: 1200 },
+            { from: 'A2', to: 'B1', amount: 1500 },
+            { from: 'A3', to: 'B1', amount: 900 },
+            // Layering: Moving the aggregated funds
+            { from: 'B1', to: 'B2', amount: 3500 },
+            // Integration: Moving to a final account before withdrawal
+            { from: 'B2', to: 'C1', amount: 3450 },
+            // A normal, unrelated transaction
+            { from: 'C1', to: 'D1', amount: 500 },
+        ];
+
+        // --- GRAPH INITIALIZATION ---
+        const container = document.getElementById('transaction-graph');
+        let nodes = new vis.DataSet();
+        let edges = new vis.DataSet();
+        let network = null;
+
+        // Function to build the graph
+        function drawGraph() {
+            // Convert app data to vis.js format
+            const visNodes = accounts.map(acc => ({
+                id: acc.id,
+                label: acc.id,
+                title: `${acc.label}<br>Suspicious: ${acc.suspicious}`,
+                color: acc.suspicious ? '#ef4444' : (acc.simulated ? '#f59e0b' : '#0ea5e9'), // red for suspicious, amber for simulated, sky blue otherwise
+                shape: 'dot',
+                size: acc.suspicious ? 20 : 15,
+                font: { color: '#ffffff' }
+            }));
+
+            const visEdges = transactions.map((trans, i) => ({
+                id: `t${i}`,
+                from: trans.from,
+                to: trans.to,
+                label: `$${trans.amount.toLocaleString()}`,
+                title: `Transaction of $${trans.amount.toLocaleString()}`,
+                arrows: 'to',
+                font: { align: 'top' },
+                color: { color: '#94a3b8', highlight: '#334155' },
+                width: Math.log(trans.amount) / Math.log(10) // Make edge width logarithmic to amount
+            }));
+
+            nodes.clear();
+            edges.clear();
+            nodes.add(visNodes);
+            edges.add(visEdges);
+
+            const data = { nodes, edges };
+
+            // Graph options
+            const options = {
+                layout: {
+                    hierarchical: {
+                        enabled: false, // Set to true for a top-down layout
+                        direction: 'LR', // Left to Right
+                        sortMethod: 'directed'
+                    }
+                },
+                physics: {
+                    solver: 'forceAtlas2Based',
+                    forceAtlas2Based: {
+                      gravitationalConstant: -50,
+                      centralGravity: 0.01,
+                      springLength: 100,
+                      springConstant: 0.08,
+                      avoidOverlap: 0.5
+                    },
+                    stabilization: {
+                        iterations: 200
+                    }
+                },
+                nodes: {
+                    borderWidth: 2,
+                    font: {
+                        size: 14,
+                        color: '#333'
+                    },
+                },
+                edges: {
+                    smooth: {
+                        type: 'cubicBezier',
+                        forceDirection: 'vertical',
+                        roundness: 0.4
+                    }
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 200,
+                    navigationButtons: true,
+                    keyboard: true
+                }
+            };
+
+            // Create the network
+            if (!network) {
+                network = new vis.Network(container, data, options);
+
+                // --- INTERACTIVITY (Path Tracing Foundation) ---
+                network.on("click", function (params) {
+                    if (params.nodes.length > 0) {
+                        const nodeId = params.nodes[0];
+                        highlightPath(nodeId);
+                    } else {
+                        // If clicking on the background, reset highlights
+                        resetHighlights();
+                    }
+                });
+            } else {
+                network.setData(data);
+            }
+        }
+
+        // --- PATH TRACING FUNCTIONS ---
+        function resetHighlights() {
+            // Reset all nodes and edges to their original colors
+            const allNodes = nodes.get({ returnType: 'Object' });
+            for (const id in allNodes) {
+                const node = accounts.find(a => a.id === id);
+                if (node) {
+                    nodes.update({
+                        id: node.id,
+                        color: node.suspicious ? '#ef4444' : (node.simulated ? '#f59e0b' : '#0ea5e9')
+                    });
+                }
+            }
+
+            const allEdges = edges.get();
+            allEdges.forEach(edge => {
+                edges.update({ id: edge.id, color: { color: '#94a3b8' } });
+            });
+        }
+
+        function highlightPath(nodeId) {
+            resetHighlights();
+            const connectedEdges = network.getConnectedEdges(nodeId);
+            const connectedNodes = new Set([nodeId]);
+
+            edges.update(connectedEdges.map(edgeId => {
+                const edge = edges.get(edgeId);
+                connectedNodes.add(edge.from);
+                connectedNodes.add(edge.to);
+                return { id: edgeId, color: { color: '#334155' }, width: 4 };
+            }));
+
+            nodes.getIds().forEach(id => {
+                if (connectedNodes.has(id)) {
+                    nodes.update({ id: id, color: '#1e293b' }); // Dark highlight color
+                }
+            });
+        }
+
+        // --- SIMULATOR LOGIC ---
+        const form = document.getElementById('simulator-form');
+        const riskPredictionDiv = document.getElementById('risk-prediction');
+        const riskResultDiv = document.getElementById('risk-result');
+
+        form.addEventListener('submit', function(event) {
+            event.preventDefault();
+            const fromAccount = document.getElementById('from-account').value.trim();
+            const toAccount = document.getElementById('to-account').value.trim();
+            const amount = parseFloat(document.getElementById('amount').value);
+
+            if (!fromAccount || !toAccount || isNaN(amount) || amount <= 0) {
+                alert('Please fill in all fields with valid data.');
+                return;
+            }
+
+            // Show loading indicator
+            riskPredictionDiv.classList.remove('hidden');
+            riskResultDiv.classList.add('hidden');
+
+            // --- Backend Placeholder ---
+            // In a real app, this would be an API call to the risk prediction model.
+            // Here, we simulate a delay and a simple risk rule.
+            setTimeout(() => {
+                // Add the new accounts and transaction to our data
+                [fromAccount, toAccount].forEach(accId => {
+                    if (!accounts.find(a => a.id === accId)) {
+                        accounts.push({ id: accId, label: `Account ${accId}`, suspicious: false, simulated: true });
+                    }
+                });
+
+                transactions.push({ from: fromAccount, to: toAccount, amount });
+
+                // Simple risk logic: high amount or connection to a suspicious node is risky
+                const fromNode = accounts.find(a => a.id === fromAccount);
+                const toNode = accounts.find(a => a.id === toAccount);
+                let risk = 'Low';
+                let reason = 'Standard transaction.';
+                let riskColor = 'bg-green-100 text-green-800';
+
+                if (amount > 10000 || fromNode?.suspicious || toNode?.suspicious) {
+                    risk = 'High';
+                    reason = 'Connects to a previously flagged suspicious account or is a large amount.';
+                    riskColor = 'bg-red-100 text-red-800';
+                } else if (amount > 4000) {
+                    risk = 'Medium';
+                    reason = 'Moderate transaction amount warrants review.';
+                    riskColor = 'bg-yellow-100 text-yellow-800';
+                }
+
+                // Display result
+                riskPredictionDiv.classList.add('hidden');
+                riskResultDiv.className = 'mt-4 text-center p-3 rounded-lg ' + riskColor;
+                riskResultDiv.querySelector('p').innerHTML = `<strong>Predicted Risk: ${risk}</strong><br><small>${reason}</small>`;
+
+                // Redraw the graph with the new data
+                drawGraph();
+
+                // Highlight the new path
+                highlightPath(fromAccount);
+
+                form.reset();
+
+            }, 1500); // Simulate 1.5 second network delay
+        });
+
+        // --- INITIAL DRAW ---
+        window.onload = () => {
+            drawGraph();
+        };
+    </script>
+</body>
+</html>
