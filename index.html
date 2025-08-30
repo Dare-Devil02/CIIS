@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction Network - Path Tracer</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- vis.js for network visualization -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        /* Custom styles for vis.js network container */
+        #network {
+            width: 100%;
+            height: 100%;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            background-color: #f8fafc;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-6 lg:p-8">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-700">Financial Transaction Path Tracer</h1>
+            <p class="text-md text-gray-500 mt-1">Visualize the flow of funds between two accounts.</p>
+        </header>
+
+        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <div class="md:col-span-1">
+                    <label for="startAccount" class="block text-sm font-medium text-gray-700 mb-1">Start Account ID</label>
+                    <input type="text" id="startAccount" placeholder="e.g., A1" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div class="md:col-span-1">
+                    <label for="endAccount" class="block text-sm font-medium text-gray-700 mb-1">End Account ID</label>
+                    <input type="text" id="endAccount" placeholder="e.g., A6" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div class="md:col-span-1">
+                    <button id="tracePathBtn" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                        Trace Path
+                    </button>
+                </div>
+            </div>
+            <div id="message-area" class="text-center mt-4 text-gray-600 font-medium h-5"></div>
+        </div>
+
+        <div class="flex flex-col lg:flex-row gap-6 h-[65vh]">
+            <!-- Network Visualization Container -->
+            <main class="w-full lg:w-3/4 h-full bg-white rounded-lg shadow-md">
+                <div id="network"></div>
+            </main>
+
+            <!-- Sidebar for Node Details -->
+            <aside id="sidebar" class="w-full lg:w-1/4 h-full bg-white rounded-lg shadow-md p-6 overflow-y-auto">
+                <h2 class="text-xl font-bold border-b pb-2 mb-4">Account Details</h2>
+                <div id="sidebar-content">
+                    <p class="text-gray-500">Click on an account in the graph to see its details here.</p>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // --- MOCK DATA AND API SIMULATION ---
+        // This section simulates your backend. In a real application, this data would come from your Neo4j database via API calls.
+
+        // Sample graph data (simulating a response from /api/graph/account/{accountId})
+        const allNodes = new vis.DataSet([
+            { id: "A1", label: 'Account A1', group: 0, balance: 50000 },
+            { id: "A2", label: 'Account A2', group: 0, balance: 25000 },
+            { id: "A3", label: 'Account A3', group: 1, balance: 10000 },
+            { id: "A4", label: 'Account A4', group: 1, balance: 75000 },
+            { id: "A5", label: 'Account A5', group: 2, balance: 120000 },
+            { id: "A6", label: 'Account A6', group: 2, balance: 30000 },
+            { id: "A7", label: 'Account A7', group: 3, balance: 5000 },
+            { id: "A8", label: 'Account A8', group: 3, balance: 8000 },
+        ]);
+
+        const allEdges = new vis.DataSet([
+            { id: "T1", from: "A1", to: "A2", label: '$2,000', value: 2000 },
+            { id: "T2", from: "A2", to: "A3", label: '$5,000', value: 5000 },
+            { id: "T3", from: "A2", to: "A4", label: '$1,500', value: 1500 },
+            { id: "T4", from: "A3", to: "A5", label: '$3,000', value: 3000 },
+            { id: "T5", from: "A4", to: "A5", label: '$10,000', value: 10000 },
+            { id: "T6", from: "A5", to: "A6", label: '$25,000', value: 25000 },
+            { id: "T7", from: "A1", to: "A7", label: '$1,000', value: 1000 },
+            { id: "T8", from: "A7", to: "A8", label: '$500', value: 500 },
+        ]);
+
+        /**
+         * Simulates a call to a pathfinding API endpoint (e.g., /api/paths/find).
+         * In a real backend, this would execute a Cypher query like:
+         *
+         * MATCH path = shortestPath((start:Account {id: $start_id})-[r:TRANSACTION*1..10]->(end:Account {id: $end_id}))
+         * UNWIND nodes(path) AS account
+         * UNWIND relationships(path) AS tx
+         * RETURN collect(DISTINCT account.id) AS nodes, collect(DISTINCT elementId(tx)) AS edges
+         *
+         * @param {string} startAccountId The ID of the starting account.
+         * @param {string} endAccountId The ID of the ending account.
+         * @returns {Promise<object|null>} A promise that resolves with the path or null if not found.
+         */
+        function findPathOnBackend(startAccountId, endAccountId) {
+            console.log(`Searching for path from ${startAccountId} to ${endAccountId}`);
+            // This is a mock. We define a few possible paths for demonstration.
+            const paths = {
+                "A1-A6": {
+                    nodes: ["A1", "A2", "A4", "A5", "A6"],
+                    edges: ["T1", "T3", "T5", "T6"]
+                },
+                "A1-A5": {
+                    nodes: ["A1", "A2", "A3", "A5"],
+                    edges: ["T1", "T2", "T4"]
+                },
+                 "A1-A8": {
+                    nodes: ["A1", "A7", "A8"],
+                    edges: ["T7", "T8"]
+                }
+            };
+
+            const pathKey = `${startAccountId}-${endAccountId}`;
+            const foundPath = paths[pathKey];
+
+            // Simulate network delay
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    if (foundPath) {
+                        resolve(foundPath);
+                    } else {
+                        resolve(null);
+                    }
+                }, 500);
+            });
+        }
+
+
+        // --- FRONTEND VISUALIZATION LOGIC ---
+
+        const container = document.getElementById('network');
+        const sidebarContent = document.getElementById('sidebar-content');
+        const tracePathBtn = document.getElementById('tracePathBtn');
+        const startAccountInput = document.getElementById('startAccount');
+        const endAccountInput = document.getElementById('endAccount');
+        const messageArea = document.getElementById('message-area');
+
+        const data = {
+            nodes: allNodes,
+            edges: allEdges,
+        };
+
+        // Options for the vis.js network
+        const options = {
+            nodes: {
+                shape: 'dot',
+                size: 20,
+                font: {
+                    size: 14,
+                    color: '#333'
+                },
+                borderWidth: 2,
+            },
+            edges: {
+                width: 1,
+                font: {
+                    size: 12,
+                    align: 'middle',
+                    color: '#555',
+                    strokeWidth: 3,
+                    strokeColor: '#ffffff'
+                },
+                arrows: {
+                    to: { enabled: true, scaleFactor: 0.5 }
+                },
+                smooth: {
+                  type: 'cubicBezier'
+                }
+            },
+            physics: {
+                enabled: true,
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: {
+                    gravitationalConstant: -50,
+                    centralGravity: 0.01,
+                    springLength: 100,
+                    springConstant: 0.08,
+                },
+            },
+            interaction: {
+                hover: true,
+                tooltipDelay: 200,
+            },
+            layout: {
+                randomSeed: 42 // for consistent layout
+            }
+        };
+
+        // Initialize the network
+        const network = new vis.Network(container, data, options);
+
+        // --- EVENT LISTENERS ---
+
+        // Phase 1: Handle clicks on nodes to show details
+        network.on('click', function(params) {
+            if (params.nodes.length > 0) {
+                const nodeId = params.nodes[0];
+                const nodeData = allNodes.get(nodeId);
+
+                let incomingTotal = 0;
+                let outgoingTotal = 0;
+
+                const connectedEdges = allEdges.get({
+                    filter: (edge) => edge.from === nodeId || edge.to === nodeId
+                });
+
+                connectedEdges.forEach(edge => {
+                    if(edge.to === nodeId) incomingTotal += edge.value;
+                    if(edge.from === nodeId) outgoingTotal += edge.value;
+                });
+
+                sidebarContent.innerHTML = `
+                    <div class="space-y-3">
+                        <div>
+                            <p class="font-bold text-lg text-indigo-600">${nodeData.label}</p>
+                            <p class="text-sm text-gray-500">ID: ${nodeData.id}</p>
+                        </div>
+                        <div class="border-t pt-3">
+                            <p class="font-semibold">Current Balance:</p>
+                            <p class="text-green-600 text-lg">$${nodeData.balance.toLocaleString()}</p>
+                        </div>
+                        <div class="border-t pt-3">
+                             <p class="font-semibold">Total Incoming:</p>
+                             <p class="text-blue-500">$${incomingTotal.toLocaleString()}</p>
+                             <p class="font-semibold mt-2">Total Outgoing:</p>
+                             <p class="text-red-500">$${outgoingTotal.toLocaleString()}</p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                 sidebarContent.innerHTML = `<p class="text-gray-500">Click on an account in the graph to see its details here.</p>`;
+            }
+        });
+
+        // Phase 2: Handle the "Trace Path" button click
+        tracePathBtn.addEventListener('click', handleTracePath);
+
+        async function handleTracePath() {
+            const startId = startAccountInput.value.trim().toUpperCase();
+            const endId = endAccountInput.value.trim().toUpperCase();
+
+            if (!startId || !endId) {
+                messageArea.textContent = 'Please enter both a start and end account ID.';
+                messageArea.className = 'text-center mt-4 text-red-600 font-medium h-5';
+                return;
+            }
+             if (startId === endId) {
+                messageArea.textContent = 'Start and end accounts cannot be the same.';
+                messageArea.className = 'text-center mt-4 text-red-600 font-medium h-5';
+                return;
+            }
+
+            messageArea.textContent = 'Tracing path...';
+            messageArea.className = 'text-center mt-4 text-gray-600 font-medium h-5';
+
+            // Reset any previous highlighting
+            resetHighlight();
+
+            const path = await findPathOnBackend(startId, endId);
+
+            if (path) {
+                highlightPath(path);
+                messageArea.textContent = 'Path found and highlighted!';
+                messageArea.className = 'text-center mt-4 text-green-600 font-medium h-5';
+            } else {
+                messageArea.textContent = 'No direct or short path found between these accounts.';
+                messageArea.className = 'text-center mt-4 text-red-600 font-medium h-5';
+            }
+        }
+
+        /**
+         * Resets all nodes and edges to their default appearance.
+         */
+        function resetHighlight() {
+            const allNodeIds = allNodes.getIds();
+            const allEdgeIds = allEdges.getIds();
+
+            const nodesToUpdate = allNodeIds.map(id => ({
+                id: id,
+                color: undefined,
+                size: 20,
+                shadow: false
+            }));
+
+            const edgesToUpdate = allEdgeIds.map(id => ({
+                id: id,
+                color: undefined,
+                width: 1,
+            }));
+
+            allNodes.update(nodesToUpdate);
+            allEdges.update(edgesToUpdate);
+        }
+
+        /**
+         * Highlights the nodes and edges that form a given path.
+         * @param {object} path An object with 'nodes' and 'edges' arrays.
+         */
+        function highlightPath(path) {
+            const highlightOptions = {
+                node: {
+                    color: { background: '#ef4444', border: '#b91c1c' },
+                    size: 25,
+                    shadow: { enabled: true, color: 'rgba(0,0,0,0.5)', size: 10, x: 5, y: 5 }
+                },
+                edge: {
+                    color: '#ef4444',
+                    width: 3,
+                }
+            };
+
+            const nodesToUpdate = path.nodes.map(nodeId => ({
+                id: nodeId,
+                ...highlightOptions.node
+            }));
+
+            const edgesToUpdate = path.edges.map(edgeId => ({
+                id: edgeId,
+                ...highlightOptions.edge
+            }));
+
+            allNodes.update(nodesToUpdate);
+            allEdges.update(edgesToUpdate);
+        }
+
+    </script>
+</body>
+</html>
